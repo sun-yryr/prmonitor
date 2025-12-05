@@ -79,7 +79,7 @@ export const Popup = observer((props: PopupProps) => {
         {isRunningAsPopup() && (
           <FullScreenLink
             target="_blank"
-            href={`chrome-extension://${chrome.runtime.id}/index.html`}
+            href={chrome.runtime.getURL("index.html")}
           >
             <FontAwesomeIcon icon="clone" />
           </FullScreenLink>
