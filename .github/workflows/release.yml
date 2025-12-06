@@ -5,10 +5,16 @@ on:
     tags:
       - "v*"
 
+permissions:
+  contents: write
+
 jobs:
   build-release:
     name: Build Release
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        browser: [chrome, firefox]
     steps:
       - uses: actions/checkout@v4
 
@@ -22,16 +28,17 @@ jobs:
         run: yarn install --frozen-lockfile
 
       - name: Build extension
-        run: yarn build
+        run: yarn build:${{ matrix.browser }}-mv3
 
       - name: Update manifest version
-        run: sed -e "s/0\.0\.0/${GITHUB_REF#refs/tags/v}/" manifest.json > dist/manifest.json
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/v}
+          sed -i "s/0\.0\.0/${VERSION}/" dist-${{ matrix.browser }}-mv3/manifest.json
 
       - name: Package extension
-        run: cd dist && zip extension.zip -r *
+        run: yarn zip:${{ matrix.browser }}-mv3
 
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload assets to GitHub Release
+        uses: svenstaro/upload-release-action@v2
         with:
-          name: extension
-          path: dist/extension.zip
+          file: dist-${{ matrix.browser }}-mv3.zip
