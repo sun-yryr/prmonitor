@@ -6,6 +6,7 @@ import {
 } from "./internal/chrome-value-storage";
 import { LoadedState } from "./loaded-state";
 import { NOTHING_MUTED } from "./mute-configuration";
+import { DEFAULT_REFRESH_INTERVAL_MINUTES } from "./refresh-interval";
 
 export function buildStore(chromeApi: ChromeApi): Store {
   return {
@@ -30,6 +31,11 @@ export function buildStore(chromeApi: ChromeApi): Store {
     lastRequestForTabsPermission: chromeValueStorage<number>(
       chromeApi,
       "lastRequestForTabsPermission"
+    ),
+    refreshIntervalMinutes: chromeValueStorageWithDefault<number>(
+      chromeApi,
+      "refreshIntervalMinutes",
+      DEFAULT_REFRESH_INTERVAL_MINUTES
     ),
   };
 }

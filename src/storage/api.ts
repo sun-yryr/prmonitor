@@ -39,6 +39,11 @@ export interface Store {
    * Storage of the last timestamp we requested the "tabs" permission.
    */
   lastRequestForTabsPermission: ValueStorage<number | null>;
+
+  /**
+   * Storage of how often pull requests should be refreshed in minutes.
+   */
+  refreshIntervalMinutes: ValueStorage<number>;
 }
 
 export interface ValueStorage<T> {
