@@ -63,6 +63,11 @@ export interface GitHubApi {
    * Returns the current status fields for a pull request.
    */
   loadPullRequestStatus(pr: PullRequestReference): Promise<PullRequestStatus>;
+
+  /**
+   * Returns how many GitHub API requests were executed since constructing this client.
+   */
+  getRequestCount(): number;
 }
 
 // Ref: https://docs.github.com/en/graphql/reference/enums#pullrequestreviewdecision

@@ -9,4 +9,8 @@ export type Message =
     }
   | {
       kind: "reload";
+    }
+  | {
+      kind: "update-refresh-interval";
+      minutes: number;
     };

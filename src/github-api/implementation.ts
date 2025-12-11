@@ -12,6 +12,8 @@ interface ThrottlingOptions {
 }
 
 export function buildGitHubApi(token: string): GitHubApi {
+  let requestCount = 0;
+
   const octokit: Octokit = new ThrottledOctokit({
     auth: `token ${token}`,
     // https://developer.github.com/v3/pulls/#list-pull-requests
@@ -41,6 +43,11 @@ export function buildGitHubApi(token: string): GitHubApi {
         return false;
       },
     },
+  });
+
+  octokit.hook.wrap("request", async (request, options) => {
+    requestCount++;
+    return request(options);
   });
 
   const graphQLClient = new GraphQLClient(graphQLEndpoint, {
@@ -98,6 +105,7 @@ export function buildGitHubApi(token: string): GitHubApi {
       );
     },
     loadPullRequestStatus(pr) {
+      requestCount++;
       const query = gql`
         query {
           repository(owner: "${pr.repo.owner}", name: "${pr.repo.name}") {
@@ -127,6 +135,9 @@ export function buildGitHubApi(token: string): GitHubApi {
           checkStatus,
         };
       });
+    },
+    getRequestCount() {
+      return requestCount;
     },
   };
 }

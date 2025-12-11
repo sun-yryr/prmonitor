@@ -1,7 +1,11 @@
 import styled from "@emotion/styled";
 import { observer } from "mobx-react-lite";
-import React, { FormEvent, useRef, useState } from "react";
+import React, { FormEvent, useEffect, useRef, useState } from "react";
 import { Core } from "../state/core";
+import {
+  MAX_REFRESH_INTERVAL_MINUTES,
+  MIN_REFRESH_INTERVAL_MINUTES,
+} from "../storage/refresh-interval";
 import { LargeButton } from "./design/Button";
 import { Center } from "./design/Center";
 import { Header } from "./design/Header";
@@ -23,6 +27,16 @@ const TokenInput = styled.input`
   }
 `;
 
+const RefreshIntervalInput = styled.input`
+  flex-grow: 1;
+  padding: 4px 8px;
+  margin-right: 8px;
+
+  &:focus {
+    outline-color: #2ee59d;
+  }
+`;
+
 export interface SettingsProps {
   core: Core;
 }
@@ -34,7 +48,15 @@ export const Settings = observer((props: SettingsProps) => {
     editing: "default",
   });
 
+  const [refreshIntervalMinutes, setRefreshIntervalMinutes] = useState(
+    props.core.refreshIntervalMinutes.toString()
+  );
+
   const inputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setRefreshIntervalMinutes(props.core.refreshIntervalMinutes.toString());
+  }, [props.core.refreshIntervalMinutes]);
 
   // Show the token editing form if:
   // - editing is "default" (user has not said whether they want to open or dismiss the form)
@@ -61,6 +83,15 @@ export const Settings = observer((props: SettingsProps) => {
     setState({
       editing: false,
     });
+  };
+
+  const saveRefreshInterval = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const minutes = parseInt(refreshIntervalMinutes, 10);
+    if (Number.isNaN(minutes)) {
+      return;
+    }
+    props.core.updateRefreshInterval(minutes).catch(console.error);
   };
 
   const cancelForm = () => {
@@ -134,6 +165,22 @@ export const Settings = observer((props: SettingsProps) => {
           </Row>
         </form>
       )}
+      <form onSubmit={saveRefreshInterval}>
+        <Paragraph>
+          Adjust how often PR Monitor should check GitHub. Increase the interval
+          if you run into rate limits.
+        </Paragraph>
+        <Row>
+          <RefreshIntervalInput
+            type="number"
+            min={MIN_REFRESH_INTERVAL_MINUTES}
+            max={MAX_REFRESH_INTERVAL_MINUTES}
+            value={refreshIntervalMinutes}
+            onChange={(event) => setRefreshIntervalMinutes(event.target.value)}
+          />
+          <LargeButton type="submit">Save interval</LargeButton>
+        </Row>
+      </form>
     </>
   );
 });

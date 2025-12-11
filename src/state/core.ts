@@ -18,6 +18,10 @@ import {
   removePullRequestMute,
   removeRepositoryMute
 } from "../storage/mute-configuration";
+import {
+  DEFAULT_REFRESH_INTERVAL_MINUTES,
+  normalizeRefreshInterval,
+} from "../storage/refresh-interval";
 
 export class Core {
   private readonly context: Context;
@@ -29,6 +33,7 @@ export class Core {
   @observable muteConfiguration = NOTHING_MUTED;
   @observable notifiedPullRequestUrls = new Set<string>();
   @observable lastError: string | null = null;
+  @observable refreshIntervalMinutes = DEFAULT_REFRESH_INTERVAL_MINUTES;
 
   constructor(context: Context) {
     makeObservable(this);
@@ -45,7 +50,10 @@ export class Core {
   }
 
   async load() {
+    const refreshIntervalMinutes =
+      this.context.store.refreshIntervalMinutes.load();
     this.token = await this.context.store.token.load();
+    this.refreshIntervalMinutes = await refreshIntervalMinutes;
     if (this.token !== null) {
       this.refreshing = await this.context.store.currentlyRefreshing.load();
       this.lastError = await this.context.store.lastError.load();
@@ -172,6 +180,16 @@ export class Core {
       whitelistedTeams: teams,
     });
     this.updateBadge();
+  }
+
+  async updateRefreshInterval(minutes: number) {
+    const normalizedMinutes = normalizeRefreshInterval(minutes);
+    this.refreshIntervalMinutes = normalizedMinutes;
+    await this.context.store.refreshIntervalMinutes.save(normalizedMinutes);
+    this.context.messenger.send({
+      kind: "update-refresh-interval",
+      minutes: normalizedMinutes,
+    });
   }
 
   @computed

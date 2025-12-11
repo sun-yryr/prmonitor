@@ -5,6 +5,7 @@ import {
   MuteConfiguration,
   NOTHING_MUTED,
 } from "../storage/mute-configuration";
+import { MIN_REFRESH_INTERVAL_MINUTES } from "../storage/refresh-interval";
 import { fakePullRequest } from "../testing/fake-pr";
 import { Core } from "./core";
 
@@ -175,6 +176,23 @@ describe("Core", () => {
     expect(env.store.lastCheck.currentValue).toEqual(null);
     expect(env.store.muteConfiguration.currentValue).toEqual(NOTHING_MUTED);
     expect(env.messenger.sent).toEqual([{ kind: "refresh" }]);
+  });
+
+  it("normalizes and stores refresh interval updates", async () => {
+    const env = buildTestingEnvironment();
+    const core = new Core(env);
+
+    await core.load();
+    await core.updateRefreshInterval(0);
+
+    expect(env.store.refreshIntervalMinutes.currentValue).toEqual(
+      MIN_REFRESH_INTERVAL_MINUTES
+    );
+    expect(core.refreshIntervalMinutes).toEqual(MIN_REFRESH_INTERVAL_MINUTES);
+    expect(env.messenger.sent).toContainEqual({
+      kind: "update-refresh-interval",
+      minutes: MIN_REFRESH_INTERVAL_MINUTES,
+    });
   });
 
   it("doesn't refresh when not authenticated", async () => {

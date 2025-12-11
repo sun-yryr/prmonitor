@@ -15,8 +15,11 @@ async function load(token: string): Promise<LoadedState> {
   const sorted = [...openPullRequests].sort((a, b) => {
     return getLastUpdateTimestamp(b) - getLastUpdateTimestamp(a);
   });
+  const requestCount = githubApi.getRequestCount();
+  console.debug("GitHub API requests during refresh", requestCount);
   return {
     userLogin: user.login,
     openPullRequests: sorted,
+    apiRequestCount: requestCount,
   };
 }

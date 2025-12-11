@@ -16,6 +16,11 @@ export interface LoadedState {
   userLogin: string;
 
   /**
+   * Number of GitHub API requests executed while building this state.
+   */
+  apiRequestCount?: number;
+
+  /**
    * The list of all open pull requests across all repositories.
    *
    * This includes pull requests that the user isn't involved in (yet). We will check the

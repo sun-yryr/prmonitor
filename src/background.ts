@@ -4,6 +4,9 @@ import { Context } from "./environment/api";
 import { buildEnvironment } from "./environment/implementation";
 import { CrossScriptMessenger } from "./messaging/api";
 import { Core } from "./state/core";
+import { normalizeRefreshInterval } from "./storage/refresh-interval";
+
+const REFRESH_ALARM_NAME = "refresh-pull-requests";
 
 // This is the entry point of the background script of the Chrome extension.
 console.debug("Background entry point running...");
@@ -15,10 +18,14 @@ let refreshing = false;
 
 function setUpBackgroundScript(chromeApi: ChromeApi, context: Context) {
   selfUpdateAsap(chromeApi);
-  refreshOnUpdate(chromeApi, triggerRefresh);
-  refreshRegulary(chromeApi, triggerRefresh);
-  refreshOnDemand(context.messenger, triggerRefresh);
   const core = new Core(context);
+  refreshOnUpdate(chromeApi, triggerRefresh);
+  const updateRefreshAlarm = refreshRegulary(
+    chromeApi,
+    context,
+    triggerRefresh
+  );
+  refreshOnDemand(context.messenger, triggerRefresh, updateRefreshAlarm);
 
   async function triggerRefresh() {
     if (refreshing) {
@@ -65,15 +72,31 @@ function refreshOnUpdate(
  */
 function refreshRegulary(
   chromeApi: ChromeApi,
+  context: Context,
   triggerRefresh: () => Promise<void>
 ) {
-  chromeApi.alarms.create({
-    periodInMinutes: 3,
-  });
+  const scheduleAlarm = async (minutes: number) => {
+    const normalizedMinutes = normalizeRefreshInterval(minutes);
+    await context.store.refreshIntervalMinutes.save(normalizedMinutes);
+    await chromeApi.alarms.clear(REFRESH_ALARM_NAME);
+    chromeApi.alarms.create(REFRESH_ALARM_NAME, {
+      periodInMinutes: normalizedMinutes,
+    });
+  };
+
+  context.store.refreshIntervalMinutes
+    .load()
+    .then(scheduleAlarm)
+    .catch(console.error);
   chromeApi.alarms.onAlarm.addListener((alarm) => {
+    if (alarm.name !== REFRESH_ALARM_NAME) {
+      return;
+    }
     console.debug("Alarm triggered", alarm);
     triggerRefresh().catch(console.error);
   });
+
+  return scheduleAlarm;
 }
 
 /**
@@ -81,12 +104,16 @@ function refreshRegulary(
  */
 function refreshOnDemand(
   messenger: CrossScriptMessenger,
-  triggerRefresh: () => Promise<void>
+  triggerRefresh: () => Promise<void>,
+  updateRefreshAlarm: (minutes: number) => Promise<void>
 ) {
   messenger.listen((message) => {
     console.debug("Message received", message);
     if (message.kind === "refresh") {
       triggerRefresh().catch(console.error);
+    }
+    if (message.kind === "update-refresh-interval") {
+      updateRefreshAlarm(message.minutes).catch(console.error);
     }
   });
 }

@@ -6,6 +6,7 @@ import {
   MuteConfiguration,
   NOTHING_MUTED,
 } from "../../storage/mute-configuration";
+import { DEFAULT_REFRESH_INTERVAL_MINUTES } from "../../storage/refresh-interval";
 
 export function buildTestingEnvironment() {
   const store = fakeStore();
@@ -44,6 +45,7 @@ function fakeStore() {
     notifiedPullRequests: fakeStorage<string[]>([]),
     token: fakeStorage<string | null>(null),
     lastRequestForTabsPermission: fakeStorage<number | null>(null),
+    refreshIntervalMinutes: fakeStorage<number>(DEFAULT_REFRESH_INTERVAL_MINUTES),
   };
 }
 
