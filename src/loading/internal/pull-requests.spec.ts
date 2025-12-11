@@ -114,5 +114,6 @@ function mockGitHubApi(): GitHubApi {
     loadComments: jest.fn(),
     loadCommits: jest.fn(),
     loadPullRequestStatus: jest.fn(),
+    getRequestCount: jest.fn(),
   };
 }
