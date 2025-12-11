@@ -196,35 +196,41 @@ export const Popup = observer((props: PopupProps) => {
             </Tabs>
             <PullRequestList
               header={
-                <>
-                  <PullRequestStatusFilterComponent
-                    statusFilter={state.statusFilter}
-                    onToggle={onToggleStatusFilter}
-                  />
+                <FiltersBar>
+                  <FilterCard>
+                    <PullRequestStatusFilterComponent
+                      statusFilter={state.statusFilter}
+                      onToggle={onToggleStatusFilter}
+                    />
+                  </FilterCard>
                   {state.currentFilter === Filter.INCOMING && (
                     <>
-                      <WhitelistedTeams
-                        onlyDirectRequestsToggled={
-                          !!props.core.muteConfiguration.onlyDirectRequests
-                        }
-                        whitelistedTeams={
-                          props.core.muteConfiguration.whitelistedTeams || []
-                        }
-                        userLogin={
-                          props.core.loadedState
-                            ? props.core.loadedState.userLogin
-                            : undefined
-                        }
-                        onToggleOnlyDirectRequests={onToggleOnlyDirectRequests}
-                        onChangeWhitelistedTeams={onChangeWhitelistedTeams}
-                      />
-                      <NewCommitsToggle
-                        toggled={!!props.core.muteConfiguration.notifyNewCommits}
-                        onToggle={onToggleNewCommitsNotification}
-                      />
+                      <FilterCard>
+                        <WhitelistedTeams
+                          onlyDirectRequestsToggled={
+                            !!props.core.muteConfiguration.onlyDirectRequests
+                          }
+                          whitelistedTeams={
+                            props.core.muteConfiguration.whitelistedTeams || []
+                          }
+                          userLogin={
+                            props.core.loadedState
+                              ? props.core.loadedState.userLogin
+                              : undefined
+                          }
+                          onToggleOnlyDirectRequests={onToggleOnlyDirectRequests}
+                          onChangeWhitelistedTeams={onChangeWhitelistedTeams}
+                        />
+                      </FilterCard>
+                      <FilterCard>
+                        <NewCommitsToggle
+                          toggled={!!props.core.muteConfiguration.notifyNewCommits}
+                          onToggle={onToggleNewCommitsNotification}
+                        />
+                      </FilterCard>
                     </>
                   )}
-                </>
+                </FiltersBar>
               }
               pullRequests={
                 filteredPullRequests
@@ -263,4 +269,26 @@ const FullScreenLink = styled(Link)`
   &:hover {
     opacity: 1;
   }
+`;
+
+const FiltersBar = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, #eef2ff 0%, #f8fafc 60%, #e0f4ff 100%);
+  border-bottom: 1px solid #e5e7eb;
+`;
+
+const FilterCard = styled.div`
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
 `;
