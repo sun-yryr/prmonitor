@@ -1,0 +1,61 @@
+name: Preview Package Artifacts in PR
+
+on:
+  pull_request: ~
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  build-and-package:
+    name: Build and Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "yarn"
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Build extensions
+        run: yarn build:all
+
+      - name: Package extensions
+        run: yarn zip:all
+      
+      - name: Generate artifact suffix
+        id: artifact-suffix
+        run: echo "value=${GITHUB_HEAD_REF//\//-}-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Upload Chrome artifact
+        id: upload_chrome
+        uses: actions/upload-artifact@v4
+        with:
+          name: chrome-mv3-${{ steps.artifact-suffix.outputs.value }}
+          path: dist-chrome-mv3.zip
+          retention-days: 7
+
+      - name: Upload Firefox artifact
+        id: upload_firefox
+        uses: actions/upload-artifact@v4
+        with:
+          name: firefox-mv3-${{ steps.artifact-suffix.outputs.value }}
+          path: dist-firefox-mv3.zip
+          retention-days: 7
+
+      - name: Comment artifact links
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          message: |
+            Built extension packages for this PR are available:
+            - Chrome MV3 ( ${{ steps.upload_chrome.outputs['artifact-url'] }} )
+            - Firefox MV3 ( ${{ steps.upload_firefox.outputs['artifact-url'] }} )
+            ---
+            by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
