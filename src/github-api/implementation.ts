@@ -1,6 +1,13 @@
 import { throttling } from "@octokit/plugin-throttling";
 import { Octokit } from "@octokit/rest";
-import { CheckStatus, GitHubApi, ReviewDecision } from "./api";
+import {
+  BulkPullRequestData,
+  CheckStatus,
+  GitHubApi,
+  PullRequestSearchHit,
+  ReviewDecision,
+  ReviewState,
+} from "./api";
 import { GraphQLClient, gql } from "graphql-request";
 
 const ThrottledOctokit = Octokit.plugin(throttling);
@@ -36,6 +43,105 @@ interface PullRequestStatusQueryResult {
       };
     };
   };
+}
+
+interface SearchPullRequestsQueryResult {
+  rateLimit?: {
+    cost?: number;
+    remaining?: number;
+  };
+  search: {
+    pageInfo: {
+      hasNextPage: boolean;
+      endCursor: string | null;
+    };
+    nodes?: Array<
+      | {
+          __typename?: string;
+          id?: string;
+        }
+      | null
+    >;
+  };
+}
+
+interface SearchPullRequestsQueryVariables {
+  query: string;
+  cursor?: string | null;
+}
+
+interface LoadPullRequestsBulkQueryResult {
+  rateLimit?: {
+    cost?: number;
+    remaining?: number;
+  };
+  nodes?: Array<
+    | ({
+        __typename?: "PullRequest";
+      } & {
+        id: string;
+        url: string;
+        title: string;
+        updatedAt: string;
+        number: number;
+        isDraft: boolean;
+        mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
+        additions: number;
+        deletions: number;
+        changedFiles: number;
+        author: { login: string; avatarUrl: string } | null;
+        repository: { name: string; owner: { login: string } };
+        reviewDecision: ReviewDecision;
+        reviewRequests: {
+          nodes?: Array<
+            | {
+                requestedReviewer?:
+                  | { __typename?: "User"; login: string }
+                  | { __typename?: "Team"; name: string }
+                  | null;
+              }
+            | null
+          >;
+        };
+        reviews: {
+          nodes?: Array<
+            | {
+                author?: { login: string } | null;
+                state: ReviewState;
+                submittedAt?: string | null;
+              }
+            | null
+          >;
+        };
+        comments: {
+          nodes?: Array<
+            | {
+                author?: { login: string } | null;
+                createdAt: string;
+              }
+            | null
+          >;
+        };
+        commits: {
+          nodes?: Array<
+            | {
+                commit: {
+                  committedDate?: string | null;
+                  statusCheckRollup?: {
+                    state?: CheckStatus | null;
+                  } | null;
+                };
+              }
+            | null
+          >;
+        };
+      })
+    | null
+  >;
+}
+
+interface LoadPullRequestsBulkQueryVariables {
+  ids: string[];
 }
 
 export function buildGitHubApi(token: string): GitHubApi {
@@ -191,6 +297,235 @@ export function buildGitHubApi(token: string): GitHubApi {
             checkStatus,
           };
         });
+    },
+
+    async searchPullRequestsGraphql(query) {
+      const gqlQuery = gql`
+        query SearchPullRequests($query: String!, $cursor: String) {
+          rateLimit {
+            cost
+            remaining
+          }
+          search(query: $query, type: ISSUE, first: 100, after: $cursor) {
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+            nodes {
+              __typename
+              ... on PullRequest {
+                id
+              }
+            }
+          }
+        }
+      `;
+
+      const hits: PullRequestSearchHit[] = [];
+      let cursor: string | null = null;
+      // Keep compatibility with previous REST search implementation which always prepended "is:pr".
+      const fullQuery = `is:pr ${query}`;
+
+      for (;;) {
+        const variables: SearchPullRequestsQueryVariables = {
+          query: fullQuery,
+          cursor,
+        };
+        const { data } = await graphQLClient.rawRequest<
+          SearchPullRequestsQueryResult,
+          SearchPullRequestsQueryVariables
+        >(gqlQuery, variables);
+
+        const rateLimitInfo = data.rateLimit;
+        console.debug(
+          `[GraphQL] searchPullRequestsGraphql -> remaining ${
+            rateLimitInfo?.remaining ?? "unknown"
+          } cost ${rateLimitInfo?.cost ?? "unknown"}`
+        );
+
+        for (const node of data.search.nodes || []) {
+          if (!node || node.__typename !== "PullRequest" || !node.id) {
+            continue;
+          }
+          hits.push({ id: node.id });
+        }
+
+        if (!data.search.pageInfo.hasNextPage) {
+          break;
+        }
+        cursor = data.search.pageInfo.endCursor;
+      }
+
+      return hits;
+    },
+
+    async loadPullRequestsBulk(ids) {
+      if (ids.length === 0) {
+        return [];
+      }
+
+      const gqlQuery = gql`
+        query LoadPullRequestsBulk($ids: [ID!]!) {
+          rateLimit {
+            cost
+            remaining
+          }
+          nodes(ids: $ids) {
+            __typename
+            ... on PullRequest {
+              id
+              url
+              title
+              updatedAt
+              number
+              isDraft
+              mergeable
+              additions
+              deletions
+              changedFiles
+              author {
+                login
+                avatarUrl
+              }
+              repository {
+                name
+                owner {
+                  login
+                }
+              }
+              reviewDecision
+              reviewRequests(first: 100) {
+                nodes {
+                  requestedReviewer {
+                    __typename
+                    ... on User {
+                      login
+                    }
+                    ... on Team {
+                      name
+                    }
+                  }
+                }
+              }
+              reviews(last: 100) {
+                nodes {
+                  author {
+                    login
+                  }
+                  state
+                  submittedAt
+                }
+              }
+              comments(last: 100) {
+                nodes {
+                  author {
+                    login
+                  }
+                  createdAt
+                }
+              }
+              commits(last: 1) {
+                nodes {
+                  commit {
+                    committedDate
+                    statusCheckRollup {
+                      state
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      `;
+
+      const variables: LoadPullRequestsBulkQueryVariables = { ids };
+      const { data } = await graphQLClient.rawRequest<
+        LoadPullRequestsBulkQueryResult,
+        LoadPullRequestsBulkQueryVariables
+      >(gqlQuery, variables);
+
+      const rateLimitInfo = data.rateLimit;
+      console.debug(
+        `[GraphQL] loadPullRequestsBulk count=${ids.length} -> remaining ${
+          rateLimitInfo?.remaining ?? "unknown"
+        } cost ${rateLimitInfo?.cost ?? "unknown"}`
+      );
+
+      const out: BulkPullRequestData[] = [];
+      for (const node of data.nodes || []) {
+        if (!node || node.__typename !== "PullRequest") {
+          continue;
+        }
+
+        const requestedReviewers: string[] = [];
+        const requestedTeams: string[] = [];
+        for (const rr of node.reviewRequests.nodes || []) {
+          const reviewer = rr?.requestedReviewer;
+          if (!reviewer) {
+            continue;
+          }
+          if (reviewer.__typename === "User") {
+            requestedReviewers.push(reviewer.login);
+          } else if (reviewer.__typename === "Team") {
+            requestedTeams.push(reviewer.name);
+          }
+        }
+
+        const reviews =
+          node.reviews.nodes
+            ?.filter((r): r is NonNullable<typeof r> => !!r)
+            .map((r) => ({
+              authorLogin: r.author?.login ?? "",
+              state: r.state,
+              submittedAt: r.submittedAt ?? undefined,
+            })) ?? [];
+
+        const comments =
+          node.comments.nodes
+            ?.filter((c): c is NonNullable<typeof c> => !!c)
+            .map((c) => ({
+              authorLogin: c.author?.login ?? "",
+              createdAt: c.createdAt,
+            })) ?? [];
+
+        const lastCommitNode = node.commits.nodes?.find((c) => !!c) ?? null;
+        const lastCommitCreatedAt =
+          lastCommitNode?.commit.committedDate ?? undefined;
+        const lastCommitCheckStatus =
+          lastCommitNode?.commit.statusCheckRollup?.state ?? undefined;
+
+        out.push({
+          id: node.id,
+          url: node.url,
+          title: node.title,
+          updatedAt: node.updatedAt,
+          number: node.number,
+          isDraft: node.isDraft,
+          mergeable: node.mergeable,
+          additions: node.additions,
+          deletions: node.deletions,
+          changedFiles: node.changedFiles,
+          author: node.author
+            ? { login: node.author.login, avatarUrl: node.author.avatarUrl }
+            : null,
+          repository: {
+            name: node.repository.name,
+            owner: { login: node.repository.owner.login },
+          },
+          requestedReviewers,
+          requestedTeams,
+          reviews,
+          comments,
+          lastCommit: {
+            createdAt: lastCommitCreatedAt,
+            checkStatus: lastCommitCheckStatus,
+          },
+          reviewDecision: node.reviewDecision,
+        });
+      }
+
+      return out;
     },
   };
 }
