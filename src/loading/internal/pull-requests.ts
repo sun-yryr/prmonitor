@@ -61,9 +61,13 @@ export async function refreshOpenPullRequests(
     uniqueIds.push(id);
   }
 
-  const chunks = chunk(uniqueIds, 100);
-  const results = await Promise.all(chunks.map((ids) => githubApi.loadPullRequestsBulk(ids)));
-  const bulk = results.flat();
+  // MEMO: when chunk size is 100, 502 error occurred.
+  const chunks = chunk(uniqueIds, 50);
+  const bulk = [];
+  for (const ids of chunks) {
+    const part = await githubApi.loadPullRequestsBulk(ids);
+    bulk.push(...part);
+  }
 
   // Convert to existing storage model.
   return bulk.map((pr) => pullRequestFromBulk(pr, reviewRequestedIds.has(pr.id)));
