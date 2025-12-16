@@ -29,10 +29,23 @@ jobs:
 
       - name: Package extensions
         run: yarn zip:all
-      
+
       - name: Generate artifact suffix
         id: artifact-suffix
         run: echo "value=${GITHUB_HEAD_REF//\//-}-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+      - name: Collect artifact metadata
+        id: artifact-metadata
+        run: |
+          timestamp=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+          chrome_hash=$(sha256sum dist-chrome-mv3.zip | awk '{print $1}')
+          firefox_hash=$(sha256sum dist-firefox-mv3.zip | awk '{print $1}')
+
+          {
+            echo "created_at=${timestamp}"
+            echo "chrome_hash=${chrome_hash}"
+            echo "firefox_hash=${firefox_hash}"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Upload Chrome artifact
         id: upload_chrome
@@ -54,8 +67,10 @@ jobs:
         uses: marocchino/sticky-pull-request-comment@v2
         with:
           message: |
-            Built extension packages for this PR are available:
+            Built extension packages for this PR are available (created at ${{ steps.artifact-metadata.outputs.created_at }} UTC):
             - Chrome MV3 ( ${{ steps.upload_chrome.outputs['artifact-url'] }} )
+              - SHA-256: ${{ steps.artifact-metadata.outputs.chrome_hash }}
             - Firefox MV3 ( ${{ steps.upload_firefox.outputs['artifact-url'] }} )
+              - SHA-256: ${{ steps.artifact-metadata.outputs.firefox_hash }}
             ---
             by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
