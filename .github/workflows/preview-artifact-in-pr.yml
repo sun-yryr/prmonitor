@@ -80,42 +80,34 @@ try:
         ["gh", "api", f"/repos/{repo}/actions/runs/{run_id}/artifacts"],
         text=True,
     )
+    artifacts = {item["name"]: item for item in json.loads(artifacts_raw).get("artifacts", [])}
 except subprocess.CalledProcessError as exc:
     print(exc.stderr, file=sys.stderr)
     raise
 
-artifacts = {item["name"]: item for item in json.loads(artifacts_raw).get("artifacts", [])}
-
-def download_and_hash(name: str) -> tuple[str, str]:
+created_at = None
+for name in (chrome_name, firefox_name):
     artifact = artifacts.get(name)
     if not artifact:
-        raise SystemExit(f"Artifact '{name}' not found in run {run_id}")
+        continue
+    created_at = artifact.get("created_at")
+    break
 
-    archive_url = artifact.get("archive_download_url")
-    download_path = Path(f"{name}.zip")
-
-    subprocess.run(["gh", "api", archive_url, "--output", str(download_path)], check=True)
-    hashed = subprocess.check_output(["sha256sum", str(download_path)], text=True).split()[0]
-
-    return hashed, artifact.get("created_at", "")
-
-chrome_hash, created_at = download_and_hash(chrome_name)
-firefox_hash, _ = download_and_hash(firefox_name)
+if not created_at:
+    raise SystemExit(f"Artifacts '{chrome_name}' or '{firefox_name}' not found in run {run_id}")
 
 with output_file.open("a", encoding="utf-8") as out:
     out.write(f"created_at={created_at}\n")
-    out.write(f"chrome_hash={chrome_hash}\n")
-    out.write(f"firefox_hash={firefox_hash}\n")
 PY
 
       - name: Comment artifact links
         uses: marocchino/sticky-pull-request-comment@v2
         with:
-          message: |
-            Built extension packages for this PR are available (created at ${{ steps.artifact-metadata.outputs.created_at }} UTC):
-            - Chrome MV3 ( ${{ steps.upload_chrome.outputs['artifact-url'] }} )
-              - SHA-256: ${{ steps.artifact-metadata.outputs.chrome_hash }}
-            - Firefox MV3 ( ${{ steps.upload_firefox.outputs['artifact-url'] }} )
-              - SHA-256: ${{ steps.artifact-metadata.outputs.firefox_hash }}
-            ---
-            by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            message: |
+              Built extension packages for this PR are available (created at ${{ steps.artifact-metadata.outputs.created_at }} UTC):
+              - Chrome MV3 ( ${{ steps.upload_chrome.outputs['artifact-url'] }} )
+              - SHA-256: ${{ steps.upload_chrome.outputs['artifact-digest'] }}
+              - Firefox MV3 ( ${{ steps.upload_firefox.outputs['artifact-url'] }} )
+              - SHA-256: ${{ steps.upload_firefox.outputs['artifact-digest'] }}
+              ---
+              by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
