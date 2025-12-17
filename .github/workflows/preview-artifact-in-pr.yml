@@ -56,49 +56,30 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          RUN_ID: ${{ github.run_id }}
-          CHROME_ARTIFACT: chrome-mv3-${{ steps.artifact-suffix.outputs.value }}
-          FIREFOX_ARTIFACT: firefox-mv3-${{ steps.artifact-suffix.outputs.value }}
+          CHROME_ARTIFACT_ID: ${{ steps.upload_chrome.outputs['artifact-id'] }}
+          FIREFOX_ARTIFACT_ID: ${{ steps.upload_firefox.outputs['artifact-id'] }}
         run: |
           set -euo pipefail
 
-          python - <<'PY'
-import json
-import os
-import subprocess
-import sys
-from pathlib import Path
+          ids=("${CHROME_ARTIFACT_ID}" "${FIREFOX_ARTIFACT_ID}")
+          created_at=""
 
-repo = os.environ["REPO"]
-run_id = os.environ["RUN_ID"]
-chrome_name = os.environ["CHROME_ARTIFACT"]
-firefox_name = os.environ["FIREFOX_ARTIFACT"]
-output_file = Path(os.environ["GITHUB_OUTPUT"])
+          for id in "${ids[@]}"; do
+            if [[ -n "${id}" ]]; then
+              created_at=$(gh api "/repos/${REPO}/actions/artifacts/${id}" --jq '.created_at' || true)
+            fi
 
-try:
-    artifacts_raw = subprocess.check_output(
-        ["gh", "api", f"/repos/{repo}/actions/runs/{run_id}/artifacts"],
-        text=True,
-    )
-    artifacts = {item["name"]: item for item in json.loads(artifacts_raw).get("artifacts", [])}
-except subprocess.CalledProcessError as exc:
-    print(exc.stderr, file=sys.stderr)
-    raise
+            if [[ -n "${created_at}" ]]; then
+              break
+            fi
+          done
 
-created_at = None
-for name in (chrome_name, firefox_name):
-    artifact = artifacts.get(name)
-    if not artifact:
-        continue
-    created_at = artifact.get("created_at")
-    break
+          if [[ -z "${created_at}" ]]; then
+            echo "Artifact creation time could not be determined" >&2
+            exit 1
+          fi
 
-if not created_at:
-    raise SystemExit(f"Artifacts '{chrome_name}' or '{firefox_name}' not found in run {run_id}")
-
-with output_file.open("a", encoding="utf-8") as out:
-    out.write(f"created_at={created_at}\n")
-PY
+          echo "created_at=${created_at}" >> "$GITHUB_OUTPUT"
 
       - name: Comment artifact links
         uses: marocchino/sticky-pull-request-comment@v2
