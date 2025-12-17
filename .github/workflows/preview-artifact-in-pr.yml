@@ -31,6 +31,10 @@ jobs:
       - name: Package extensions
         run: yarn zip:all
 
+      - name: Record artifact timestamp
+        id: artifact-timestamp
+        run: echo "created_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+
       - name: Generate artifact suffix
         id: artifact-suffix
         run: echo "value=${GITHUB_HEAD_REF//\//-}-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
@@ -51,41 +55,11 @@ jobs:
           path: dist-firefox-mv3.zip
           retention-days: 7
 
-      - name: Collect artifact metadata
-        id: artifact-metadata
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          CHROME_ARTIFACT_ID: ${{ steps.upload_chrome.outputs['artifact-id'] }}
-          FIREFOX_ARTIFACT_ID: ${{ steps.upload_firefox.outputs['artifact-id'] }}
-        run: |
-          set -euo pipefail
-
-          ids=("${CHROME_ARTIFACT_ID}" "${FIREFOX_ARTIFACT_ID}")
-          created_at=""
-
-          for id in "${ids[@]}"; do
-            if [[ -n "${id}" ]]; then
-              created_at=$(gh api "/repos/${REPO}/actions/artifacts/${id}" --jq '.created_at' || true)
-            fi
-
-            if [[ -n "${created_at}" ]]; then
-              break
-            fi
-          done
-
-          if [[ -z "${created_at}" ]]; then
-            echo "Artifact creation time could not be determined" >&2
-            exit 1
-          fi
-
-          echo "created_at=${created_at}" >> "$GITHUB_OUTPUT"
-
       - name: Comment artifact links
         uses: marocchino/sticky-pull-request-comment@v2
         with:
             message: |
-              Built extension packages for this PR are available (created at ${{ steps.artifact-metadata.outputs.created_at }} UTC):
+              Built extension packages for this PR are available (created at ${{ steps.artifact-timestamp.outputs.created_at }} UTC):
               - Chrome MV3 ( ${{ steps.upload_chrome.outputs['artifact-url'] }} )
               - SHA-256: ${{ steps.upload_chrome.outputs['artifact-digest'] }}
               - Firefox MV3 ( ${{ steps.upload_firefox.outputs['artifact-url'] }} )
