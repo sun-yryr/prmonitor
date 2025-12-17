@@ -58,11 +58,11 @@ jobs:
       - name: Comment artifact links
         uses: marocchino/sticky-pull-request-comment@v2
         with:
-            message: |
-              Built extension packages for this PR are available (created at ${{ steps.artifact-timestamp.outputs.created_at }} UTC):
-              - Chrome MV3 ( ${{ steps.upload_chrome.outputs['artifact-url'] }} )
+          message: |
+            Built extension packages for this PR are available (created at ${{ steps.artifact-timestamp.outputs.created_at }} UTC):
+            - Chrome MV3 ( ${{ steps.upload_chrome.outputs['artifact-url'] }} )
               - SHA-256: ${{ steps.upload_chrome.outputs['artifact-digest'] }}
-              - Firefox MV3 ( ${{ steps.upload_firefox.outputs['artifact-url'] }} )
+            - Firefox MV3 ( ${{ steps.upload_firefox.outputs['artifact-url'] }} )
               - SHA-256: ${{ steps.upload_firefox.outputs['artifact-digest'] }}
-              ---
-              by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            ---
+            by ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
