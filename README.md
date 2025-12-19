@@ -36,7 +36,10 @@ Here's a quick demo of PR Monitor in action:
 ## How to install
 
 1. Install the [Chrome extension](https://chrome.google.com/webstore/detail/pr-monitor/pneldbfhblmldbhmkolclpkijgnjcmng) or [Firefox extension](https://addons.mozilla.org/en-US/firefox/addon/pr-monitor)
-2. [Create a GitHub personal access token with the **repo** permission](https://github.com/settings/tokens)
+2. Create a GitHub personal access token:
+   - Classic PAT: **repo**, **read:org**, and **read:discussion** scopes
+   - Fine-grained token: Read access for **Commit statuses**, **Contents**, and **Pull requests**
+   - Token creation links: [classic](https://github.com/settings/tokens) and [fine-grained](https://github.com/settings/tokens?type=beta)
 3. Enter the token into the extension
 4. Enjoy
 
