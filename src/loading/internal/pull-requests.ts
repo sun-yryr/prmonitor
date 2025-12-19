@@ -1,7 +1,5 @@
-import { RestEndpointMethodTypes } from "@octokit/rest";
 import {
   GitHubApi,
-  PullRequestReference,
   PullRequestStatus,
   RepoReference,
 } from "../../github-api/api";
@@ -13,6 +11,14 @@ import {
   Review,
   ReviewState,
 } from "../../storage/loaded-state";
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) {
+    out.push(items.slice(i, i + size));
+  }
+  return out;
+}
 
 /**
  * Refreshes the list of pull requests for a list of repositories.
@@ -27,130 +33,117 @@ export async function refreshOpenPullRequests(
 ): Promise<PullRequest[]> {
   // Note: each query should specifically exclude the previous ones so we don't end up having
   // to deduplicate PRs across lists.
-  const reviewRequestedPullRequests = await githubApi.searchPullRequests(
+  const reviewRequestedPullRequests = await githubApi.searchPullRequestsGraphql(
     `review-requested:${userLogin} -author:${userLogin} is:open archived:false`
   );
-  const commentedPullRequests = await githubApi.searchPullRequests(
+  const commentedPullRequests = await githubApi.searchPullRequestsGraphql(
     `commenter:${userLogin} -author:${userLogin} -review-requested:${userLogin} is:open archived:false`
   );
-  const ownPullRequests = await githubApi.searchPullRequests(
+  const ownPullRequests = await githubApi.searchPullRequestsGraphql(
     `author:${userLogin} is:open archived:false`
   );
-  return Promise.all([
-    ...reviewRequestedPullRequests.map((pr) =>
-      updateCommentsAndReviews(githubApi, pr, true)
-    ),
-    ...commentedPullRequests.map((pr) =>
-      updateCommentsAndReviews(githubApi, pr)
-    ),
-    ...ownPullRequests.map((pr) => updateCommentsAndReviews(githubApi, pr)),
-  ]);
-}
 
-async function updateCommentsAndReviews(
-  githubApi: GitHubApi,
-  rawPullRequest: RestEndpointMethodTypes["search"]["issuesAndPullRequests"]["response"]["data"]["items"][number],
-  isReviewRequested = false
-): Promise<PullRequest> {
-  const repo = extractRepo(rawPullRequest);
-  const pr: PullRequestReference = {
-    repo,
-    number: rawPullRequest.number,
-  };
-  const [
-    freshPullRequestDetails,
-    freshReviews,
-    freshComments,
-    freshCommits,
-    pullRequestStatus,
-  ] = await Promise.all([
-    githubApi.loadPullRequestDetails(pr),
-    githubApi.loadReviews(pr).then((reviews) =>
-      reviews.map((review) => ({
-        authorLogin: review.user ? review.user.login : "",
-        state: review.state as ReviewState,
-        submittedAt: review.submitted_at,
-      }))
-    ),
-    githubApi.loadComments(pr).then((comments) =>
-      comments.map((comment) => ({
-        authorLogin: comment.user ? comment.user.login : "",
-        createdAt: comment.created_at,
-      }))
-    ),
-    githubApi.loadCommits(pr).then((commits) =>
-      commits.map((commit) => ({
-        authorLogin: commit.author ? commit.author.login : "",
-        createdAt: commit.commit.author?.date,
-      }))
-    ),
-    githubApi.loadPullRequestStatus(pr),
+  const reviewRequestedIds = new Set(reviewRequestedPullRequests.map((p) => p.id));
+  const allIds = nonEmptyItems([
+    ...reviewRequestedPullRequests.map((p) => p.id),
+    ...commentedPullRequests.map((p) => p.id),
+    ...ownPullRequests.map((p) => p.id),
   ]);
 
-  return pullRequestFromResponse(
-    rawPullRequest,
-    freshPullRequestDetails,
-    freshReviews,
-    freshComments,
-    freshCommits,
-    isReviewRequested,
-    pullRequestStatus
-  );
+  // Preserve first-seen order for stable sorting before downstream timestamp sort.
+  const uniqueIds: string[] = [];
+  const seen = new Set<string>();
+  for (const id of allIds) {
+    if (seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    uniqueIds.push(id);
+  }
+
+  // MEMO: when chunk size is 100, 502 error occurred.
+  const chunks = chunk(uniqueIds, 50);
+  const bulk = [];
+  for (const ids of chunks) {
+    const part = await githubApi.loadPullRequestsBulk(ids);
+    bulk.push(...part);
+  }
+
+  // Convert to existing storage model.
+  return bulk.map((pr) => pullRequestFromBulk(pr, reviewRequestedIds.has(pr.id)));
 }
 
-function pullRequestFromResponse(
-  response: RestEndpointMethodTypes["search"]["issuesAndPullRequests"]["response"]["data"]["items"][number],
-  details: RestEndpointMethodTypes["pulls"]["get"]["response"]["data"],
-  reviews: Review[],
-  comments: Comment[],
-  commits: Commit[],
-  reviewRequested: boolean,
-  status: PullRequestStatus
+function pullRequestFromBulk(
+  pr: {
+    id: string;
+    url: string;
+    title: string;
+    updatedAt: string;
+    number: number;
+    isDraft: boolean;
+    mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN";
+    additions: number;
+    deletions: number;
+    changedFiles: number;
+    author: { login: string; avatarUrl: string } | null;
+    repository: { name: string; owner: { login: string } };
+    requestedReviewers: string[];
+    requestedTeams: string[];
+    reviews: Array<{ authorLogin: string; state: ReviewState; submittedAt?: string }>;
+    comments: Array<{ authorLogin: string; createdAt: string }>;
+    lastCommit?: { createdAt?: string; checkStatus?: PullRequestStatus["checkStatus"] };
+    reviewDecision: PullRequestStatus["reviewDecision"];
+  },
+  reviewRequested: boolean
 ): PullRequest {
-  const repo = extractRepo(response);
+  const repo: RepoReference = {
+    owner: pr.repository.owner.login,
+    name: pr.repository.name,
+  };
+
+  const reviews: Review[] = pr.reviews.map((r) => ({
+    authorLogin: r.authorLogin,
+    state: r.state,
+    submittedAt: r.submittedAt,
+  }));
+
+  const comments: Comment[] = pr.comments.map((c) => ({
+    authorLogin: c.authorLogin,
+    createdAt: c.createdAt,
+  }));
+
+  const commits: Commit[] = pr.lastCommit?.createdAt
+    ? [
+        {
+          authorLogin: "",
+          createdAt: pr.lastCommit.createdAt,
+        },
+      ]
+    : [];
+
   return {
-    nodeId: response.node_id,
-    htmlUrl: response.html_url,
+    nodeId: pr.id,
+    htmlUrl: pr.url,
     repoOwner: repo.owner,
     repoName: repo.name,
-    pullRequestNumber: response.number,
-    updatedAt: response.updated_at,
-    author: response.user && {
-      login: response.user.login,
-      avatarUrl: response.user.avatar_url,
-    },
+    pullRequestNumber: pr.number,
+    updatedAt: pr.updatedAt,
+    author: pr.author,
     changeSummary: {
-      changedFiles: details.changed_files,
-      additions: details.additions,
-      deletions: details.deletions,
+      changedFiles: pr.changedFiles,
+      additions: pr.additions,
+      deletions: pr.deletions,
     },
-    title: response.title,
-    draft: response.draft,
-    mergeable: details.mergeable || false,
+    title: pr.title,
+    draft: pr.isDraft,
+    mergeable: pr.mergeable === "MERGEABLE",
     reviewRequested,
-    requestedReviewers: nonEmptyItems(
-      details.requested_reviewers?.map((reviewer) => reviewer?.login)
-    ),
-    requestedTeams: nonEmptyItems(
-      details.requested_teams?.map((team) => team?.name)
-    ),
+    requestedReviewers: nonEmptyItems(pr.requestedReviewers),
+    requestedTeams: nonEmptyItems(pr.requestedTeams),
     reviews,
     comments,
     commits,
-    reviewDecision: status.reviewDecision,
-    checkStatus: status.checkStatus,
-  };
-}
-
-function extractRepo(
-  response: RestEndpointMethodTypes["search"]["issuesAndPullRequests"]["response"]["data"]["items"][number]
-): RepoReference {
-  const urlParts = response.repository_url.split("/");
-  if (urlParts.length < 2) {
-    throw new Error(`Unexpected repository_url: ${response.repository_url}`);
-  }
-  return {
-    owner: urlParts[urlParts.length - 2],
-    name: urlParts[urlParts.length - 1],
+    reviewDecision: pr.reviewDecision,
+    checkStatus: pr.lastCommit?.checkStatus,
   };
 }
