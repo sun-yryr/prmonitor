@@ -10,6 +10,7 @@ import { PullRequest, ref } from "../storage/loaded-state";
 import { MuteType } from "../storage/mute-configuration";
 import { Link } from "./design/Link";
 import { Row } from "./design/Row";
+import { ExcludeBotsToggle } from "./ExcludeBotsToggle";
 import { IgnoredRepositories } from "./IgnoredRepositories";
 import { Loader } from "./Loader";
 import { NewCommitsToggle } from "./NewCommitsToggle";
@@ -58,6 +59,10 @@ export const Popup = observer((props: PopupProps) => {
 
   const onToggleOnlyDirectRequests = () => {
     props.core.toggleOnlyDirectRequestsSetting();
+  };
+
+  const onToggleExcludeBots = () => {
+    props.core.toggleExcludeBotsSetting();
   };
 
   const onChangeWhitelistedTeams = (teamsText: string) => {
@@ -181,6 +186,10 @@ export const Popup = observer((props: PopupProps) => {
                     <NewCommitsToggle
                       toggled={!!props.core.muteConfiguration.notifyNewCommits}
                       onToggle={onToggleNewCommitsNotification}
+                    />
+                    <ExcludeBotsToggle
+                      toggled={!!props.core.muteConfiguration.excludeBots}
+                      onToggle={onToggleExcludeBots}
                     />
                   </>
                 )

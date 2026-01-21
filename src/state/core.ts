@@ -166,6 +166,14 @@ export class Core {
     this.updateBadge();
   }
 
+  async toggleExcludeBotsSetting() {
+    await this.saveMuteConfiguration({
+      ...this.muteConfiguration,
+      excludeBots: !this.muteConfiguration.excludeBots,
+    });
+    this.updateBadge();
+  }
+
   async onChangeWhitelistedTeamsSetting(teams: string[]) {
     await this.saveMuteConfiguration({
       ...this.muteConfiguration,
