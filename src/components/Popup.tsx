@@ -1,9 +1,15 @@
 import styled from "@emotion/styled";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { observer } from "mobx-react-lite";
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 import { Badge, Tab, Tabs } from "react-bootstrap";
 import { Filter } from "../filtering/filters";
+import {
+  DEFAULT_STATUS_FILTER,
+  filterPullRequestsByStatus,
+  PullRequestStatus,
+  PullRequestStatusFilter,
+} from "../filtering/status-filter";
 import { isRunningAsPopup } from "../popup-environment";
 import { Core } from "../state/core";
 import { PullRequest, ref } from "../storage/loaded-state";
@@ -14,6 +20,7 @@ import { IgnoredRepositories } from "./IgnoredRepositories";
 import { Loader } from "./Loader";
 import { NewCommitsToggle } from "./NewCommitsToggle";
 import { PullRequestList } from "./PullRequestList";
+import { PullRequestStatusFilter as PullRequestStatusFilterComponent } from "./PullRequestStatusFilter";
 import { Settings } from "./Settings";
 import { Status } from "./Status";
 import { WhitelistedTeams } from "./WhitelistedTeams";
@@ -24,16 +31,29 @@ export interface PopupProps {
 
 export interface PopupState {
   currentFilter: Filter;
+  statusFilter: PullRequestStatusFilter;
 }
 
 export const Popup = observer((props: PopupProps) => {
   const [state, setState] = useState<PopupState>({
     currentFilter: Filter.INCOMING,
+    statusFilter: { ...DEFAULT_STATUS_FILTER },
   });
 
+  const filteredPullRequests = useMemo(
+    () =>
+      props.core.filteredPullRequests
+        ? filterPullRequestsByStatus(
+            props.core.filteredPullRequests,
+            state.statusFilter
+          )
+        : null,
+    [props.core.filteredPullRequests, state.statusFilter]
+  );
+
   const onOpenAll = () => {
-    const pullRequests = props.core.filteredPullRequests
-      ? props.core.filteredPullRequests[state.currentFilter]
+    const pullRequests = filteredPullRequests
+      ? filteredPullRequests[state.currentFilter]
       : [];
     for (const pullRequest of pullRequests) {
       onOpen(pullRequest.htmlUrl);
@@ -68,6 +88,16 @@ export const Popup = observer((props: PopupProps) => {
     props.core.onChangeWhitelistedTeamsSetting(teams);
   };
 
+  const onToggleStatusFilter = (status: PullRequestStatus) => {
+    setState((currentState) => ({
+      ...currentState,
+      statusFilter: {
+        ...currentState.statusFilter,
+        [status]: !currentState.statusFilter[status],
+      },
+    }));
+  };
+
   if (props.core.overallStatus !== "loaded") {
     return <Loader />;
   }
@@ -97,22 +127,27 @@ export const Popup = observer((props: PopupProps) => {
             <Tabs
               id="popup-tabs"
               activeKey={state.currentFilter}
-              onSelect={(key) => setState({ currentFilter: key as Filter })}
+              onSelect={(key) =>
+                setState((currentState) => ({
+                  ...currentState,
+                  currentFilter: key as Filter,
+                }))
+              }
             >
               <Tab
                 title={
                   <>
                     Incoming PRs{" "}
-                    {props.core.filteredPullRequests && (
+                    {filteredPullRequests && (
                       <Badge
                         pill
                         bg={
-                          props.core.filteredPullRequests.incoming.length > 0
+                          filteredPullRequests.incoming.length > 0
                             ? "danger"
                             : "secondary"
                         }
                       >
-                        {props.core.filteredPullRequests.incoming.length}
+                        {filteredPullRequests.incoming.length}
                       </Badge>
                     )}
                   </>
@@ -123,9 +158,9 @@ export const Popup = observer((props: PopupProps) => {
                 title={
                   <>
                     Muted{" "}
-                    {props.core.filteredPullRequests && (
+                    {filteredPullRequests && (
                       <Badge bg="secondary">
-                        {props.core.filteredPullRequests.muted.length}
+                        {filteredPullRequests.muted.length}
                       </Badge>
                     )}
                   </>
@@ -136,9 +171,9 @@ export const Popup = observer((props: PopupProps) => {
                 title={
                   <>
                     Already reviewed{" "}
-                    {props.core.filteredPullRequests && (
+                    {filteredPullRequests && (
                       <Badge bg="secondary">
-                        {props.core.filteredPullRequests.reviewed.length}
+                        {filteredPullRequests.reviewed.length}
                       </Badge>
                     )}
                   </>
@@ -149,9 +184,9 @@ export const Popup = observer((props: PopupProps) => {
                 title={
                   <>
                     My PRs{" "}
-                    {props.core.filteredPullRequests && (
+                    {filteredPullRequests && (
                       <Badge bg="secondary">
-                        {props.core.filteredPullRequests.mine.length}
+                        {filteredPullRequests.mine.length}
                       </Badge>
                     )}
                   </>
@@ -161,33 +196,45 @@ export const Popup = observer((props: PopupProps) => {
             </Tabs>
             <PullRequestList
               header={
-                state.currentFilter === Filter.INCOMING && (
-                  <>
-                    <WhitelistedTeams
-                      onlyDirectRequestsToggled={
-                        !!props.core.muteConfiguration.onlyDirectRequests
-                      }
-                      whitelistedTeams={
-                        props.core.muteConfiguration.whitelistedTeams || []
-                      }
-                      userLogin={
-                        props.core.loadedState
-                          ? props.core.loadedState.userLogin
-                          : undefined
-                      }
-                      onToggleOnlyDirectRequests={onToggleOnlyDirectRequests}
-                      onChangeWhitelistedTeams={onChangeWhitelistedTeams}
+                <FiltersBar>
+                  <FilterCard>
+                    <PullRequestStatusFilterComponent
+                      statusFilter={state.statusFilter}
+                      onToggle={onToggleStatusFilter}
                     />
-                    <NewCommitsToggle
-                      toggled={!!props.core.muteConfiguration.notifyNewCommits}
-                      onToggle={onToggleNewCommitsNotification}
-                    />
-                  </>
-                )
+                  </FilterCard>
+                  {state.currentFilter === Filter.INCOMING && (
+                    <>
+                      <FilterCard>
+                        <WhitelistedTeams
+                          onlyDirectRequestsToggled={
+                            !!props.core.muteConfiguration.onlyDirectRequests
+                          }
+                          whitelistedTeams={
+                            props.core.muteConfiguration.whitelistedTeams || []
+                          }
+                          userLogin={
+                            props.core.loadedState
+                              ? props.core.loadedState.userLogin
+                              : undefined
+                          }
+                          onToggleOnlyDirectRequests={onToggleOnlyDirectRequests}
+                          onChangeWhitelistedTeams={onChangeWhitelistedTeams}
+                        />
+                      </FilterCard>
+                      <FilterCard>
+                        <NewCommitsToggle
+                          toggled={!!props.core.muteConfiguration.notifyNewCommits}
+                          onToggle={onToggleNewCommitsNotification}
+                        />
+                      </FilterCard>
+                    </>
+                  )}
+                </FiltersBar>
               }
               pullRequests={
-                props.core.filteredPullRequests
-                  ? props.core.filteredPullRequests[state.currentFilter]
+                filteredPullRequests
+                  ? filteredPullRequests[state.currentFilter]
                   : null
               }
               emptyMessage={
@@ -222,4 +269,26 @@ const FullScreenLink = styled(Link)`
   &:hover {
     opacity: 1;
   }
+`;
+
+const FiltersBar = styled.div`
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  padding: 12px;
+  background: linear-gradient(135deg, #eef2ff 0%, #f8fafc 60%, #e0f4ff 100%);
+  border-bottom: 1px solid #e5e7eb;
+`;
+
+const FilterCard = styled.div`
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  padding: 12px 14px;
+  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+  min-height: 96px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
 `;
