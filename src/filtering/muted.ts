@@ -14,6 +14,11 @@ export function isMuted(
   pr: PullRequest,
   muteConfiguration: MuteConfiguration
 ): MutedResult {
+  // Check if the PR is authored by a bot and should be excluded
+  if (muteConfiguration.excludeBots && pr.author?.login.endsWith("[bot]")) {
+    return MutedResult.INVISIBLE;
+  }
+
   const currentTime = context.getCurrentTime();
   for (const [owner, ignoreConfiguration] of Object.entries(
     muteConfiguration.ignored || {}
